@@ -294,8 +294,32 @@
         }
 
         async function switchCamera(deviceId) {
+            // 顯示載入畫面
+            const videoContainer = els.video.parentElement;
+            let loader = videoContainer.querySelector('.camera-loader');
+            if (!loader) {
+                loader = document.createElement('div');
+                loader.className = 'camera-loader absolute inset-0 bg-black z-20 flex items-center justify-center text-white';
+                loader.innerHTML = '<div class="flex flex-col items-center"><i class="fa-solid fa-spinner fa-spin text-3xl mb-2"></i><span>切換鏡頭中...</span></div>';
+                videoContainer.appendChild(loader);
+            }
+            loader.classList.remove('hidden');
+
+            // 停止當前串流
+            if (els.video.srcObject) {
+                const tracks = els.video.srcObject.getTracks();
+                tracks.forEach(track => track.stop());
+                els.video.srcObject = null;
+            }
+
+            // 強制等待 1 秒，讓手機硬體有時間釋放資源
+            await new Promise(r => setTimeout(r, 1000));
+
             STATE.currentCameraId = deviceId;
             await startCamera(deviceId);
+
+            // 隱藏載入畫面
+            loader.classList.add('hidden');
         }
 
         // 錄影系統
@@ -765,6 +789,7 @@
 
         async function startCamera(deviceId = null) {
             try {
+                // 確保舊的 MediaPipe camera utils 停止 (雖然我們現在主要用原生 getUserMedia)
                 if (cameraUtils) {
                     await cameraUtils.stop();
                 }
@@ -784,32 +809,22 @@
                     pose.onResults(onResults);
                 }
 
-                // 重新取得相機列表以更新 UI
-                await getCameras();
-
-                // 如果沒有指定 deviceId，且有列表，使用列表中的第一個（通常是預設）
-                // 或者讓 Camera Utils 自動處理
-
-                const constraints = {
-                    width: 1280,
-                    height: 720
-                };
-
-                if (deviceId) {
-                    constraints.deviceId = { exact: deviceId };
+                // 重新取得相機列表以更新 UI (如果是第一次啟動)
+                if (!deviceId) {
+                    await getCameras();
                 }
 
-                // 這裡使用 MediaPipe 的 Camera Utils，它封裝了 getUserMedia
-                // 但它不直接支援傳入 deviceId，所以我們需要稍微繞過一下，或者直接用 video 元素
-                // MediaPipe Camera Utils 構造函數第二個參數是 options
-                // 讓我們嘗試直接傳遞 video 元素並手動設置 srcObject，這樣控制權更大
-
-                // 修正：MediaPipe Camera Utils 主要是為了方便，但切換鏡頭比較麻煩。
-                // 我們改用原生的 getUserMedia 獲取 stream，然後賦值給 video，再用 pose.send
-
-                const stream = await navigator.mediaDevices.getUserMedia({
+                const constraints = {
                     video: deviceId ? { deviceId: { exact: deviceId } } : { width: 1280, height: 720 }
-                });
+                };
+
+                // 停止當前 video 元素上的串流 (雙重保險)
+                if (els.video.srcObject) {
+                    const tracks = els.video.srcObject.getTracks();
+                    tracks.forEach(track => track.stop());
+                }
+
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
 
                 els.video.srcObject = stream;
                 await els.video.play();
@@ -818,7 +833,9 @@
                 if (!window.poseLoopStarted) {
                     window.poseLoopStarted = true;
                     async function poseLoop() {
-                        await pose.send({ image: els.video });
+                        if (els.video.readyState >= 2) { // 確保影片已準備好
+                            await pose.send({ image: els.video });
+                        }
                         requestAnimationFrame(poseLoop);
                     }
                     poseLoop();
@@ -834,6 +851,9 @@
             } catch (e) {
                 console.error('Camera error:', e);
                 addLog('攝影機啟動失敗: ' + e.message, 'error');
+                // 如果失敗，嘗試移除 loading
+                const loader = document.querySelector('.camera-loader');
+                if (loader) loader.classList.add('hidden');
             }
         }
 
