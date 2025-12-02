@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>AI FallGuard Pro</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
@@ -41,29 +41,51 @@
         .animate-pulse-red {
             animation: pulse-red 2s infinite;
         }
+
+        /* Mobile scrollbar hide */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
     </style>
 </head>
 
-<body class="h-screen flex flex-col overflow-hidden">
-    <header class="h-16 glass flex items-center justify-between px-6 z-50">
+<body class="h-screen flex flex-col overflow-hidden md:overflow-hidden">
+    <!-- Header -->
+    <header class="h-14 md:h-16 glass flex items-center justify-between px-4 md:px-6 z-50 shrink-0">
         <div class="flex items-center gap-3">
             <div class="w-8 h-8 rounded bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
                 <i class="fa-solid fa-person-falling text-white text-sm"></i>
             </div>
-            <h1 class="text-xl font-bold text-white">AI FallGuard <span class="text-blue-400">Pro</span></h1>
+            <h1 class="text-lg md:text-xl font-bold text-white">FallGuard <span class="text-blue-400">Pro</span></h1>
         </div>
-        <div class="flex gap-4">
+        <div class="flex gap-3">
             <div id="rec-indicator"
                 class="hidden items-center gap-2 px-3 py-1 rounded-full bg-red-500/20 border border-red-500/50 text-red-400 text-xs">
-                <div class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>錄影中
+                <div class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div><span
+                    class="hidden md:inline">錄影中</span>
             </div>
+            <!-- Camera Switcher (Mobile/Desktop) -->
+            <select id="camera-select" onchange="switchCamera(this.value)"
+                class="bg-slate-800 border border-white/10 rounded-lg text-xs px-2 py-1 max-w-[100px] md:max-w-[150px] outline-none focus:ring-1 focus:ring-blue-500">
+                <option value="" disabled selected>載入相機...</option>
+            </select>
             <button onclick="toggleSettings()" class="p-2 rounded-lg hover:bg-white/10"><i
                     class="fa-solid fa-gear"></i></button>
         </div>
     </header>
 
-    <main class="flex-1 flex overflow-hidden">
-        <aside class="w-80 glass border-r border-white/10 flex flex-col">
+    <!-- Main Layout -->
+    <div class="flex-1 flex flex-col md:flex-row overflow-y-auto md:overflow-hidden relative">
+
+        <!-- Sidebar (Logs & Recordings) -->
+        <!-- Mobile: Order 2 (Bottom), Desktop: Order 1 (Left) -->
+        <aside
+            class="w-full md:w-80 glass border-t md:border-r md:border-t-0 border-white/10 flex flex-col order-2 md:order-1 shrink-0 h-auto md:h-full min-h-[50vh] md:min-h-0">
             <div class="p-4 border-b border-white/5">
                 <div class="bg-slate-800/50 rounded-xl p-4 border border-white/5">
                     <div id="pose-status" class="text-lg font-bold mb-1">監控中</div>
@@ -71,50 +93,60 @@
                     </div>
                 </div>
             </div>
-            <div class="flex-1 overflow-auto p-4">
+            <div class="flex-1 p-4">
                 <h3 class="text-sm font-semibold mb-2">事件日誌</h3>
-                <div id="event-log" class="text-xs space-y-1"></div>
+                <div id="event-log" class="text-xs space-y-1 max-h-40 md:max-h-full overflow-y-auto"></div>
             </div>
             <div class="p-4 border-t border-white/10">
-                <h3 class="text-sm font-semibold mb-2">錄影記錄 <span class="text-xs text-gray-500 font-normal">(保留最近 5
+                <h3 class="text-sm font-semibold mb-2">錄影記錄 <span class="text-xs text-gray-500 font-normal">(最近 5
                         筆)</span></h3>
                 <div id="recordings" class="space-y-2"></div>
             </div>
         </aside>
 
-        <div class="flex-1 relative bg-black flex">
-            <video id="input-video" class="hidden"></video>
-            <div class="w-1/2 relative border-r border-white/10">
+        <!-- Content Area (Video & 3D) -->
+        <!-- Mobile: Order 1 (Top), Desktop: Order 2 (Right) -->
+        <!-- Mobile: 100vh height (minus header) to force scroll for sidebar -->
+        <div
+            class="w-full md:flex-1 order-1 md:order-2 flex flex-col md:flex-row bg-black h-[calc(100vh-3.5rem)] md:h-full shrink-0 relative">
+
+            <!-- Video Feed -->
+            <div class="w-full h-1/2 md:w-1/2 md:h-full relative border-b md:border-b-0 md:border-r border-white/10">
+                <video id="input-video" class="hidden" playsinline webkit-playsinline></video>
                 <div class="absolute top-4 left-4 z-10 px-2 py-1 rounded bg-black/50 text-xs border border-white/10">
                     原始影像</div>
-                <canvas id="output-canvas" class="w-full h-full"></canvas>
+                <canvas id="output-canvas" class="w-full h-full object-cover"></canvas>
             </div>
-            <div class="w-1/2 relative bg-slate-900">
+
+            <!-- 3D Skeleton -->
+            <div class="w-full h-1/2 md:w-1/2 md:h-full relative bg-slate-900">
                 <div class="absolute top-4 left-4 z-10 px-2 py-1 rounded bg-black/50 text-xs border border-white/10">3D
                     骨架</div>
                 <div id="three-canvas" class="w-full h-full"></div>
             </div>
 
+            <!-- Alarm Overlay -->
             <div id="alarm"
-                class="absolute inset-0 bg-red-900/80 backdrop-blur-sm hidden flex-col items-center justify-center z-50">
-                <div class="animate-pulse-red rounded-full p-8 bg-red-600 mb-4">
-                    <i class="fa-solid fa-triangle-exclamation text-6xl text-white"></i>
+                class="absolute inset-0 bg-red-900/90 backdrop-blur-sm hidden flex-col items-center justify-center z-50 text-center p-4">
+                <div class="animate-pulse-red rounded-full p-6 md:p-8 bg-red-600 mb-4">
+                    <i class="fa-solid fa-triangle-exclamation text-4xl md:text-6xl text-white"></i>
                 </div>
-                <h2 class="text-5xl font-bold text-white mb-2">偵測到跌倒!</h2>
-                <p class="text-xl text-red-200 mb-8">正在錄影並分析...</p>
-                <div id="ai-result" class="hidden max-w-2xl bg-black/40 p-6 rounded-xl border border-red-400/30 mb-8">
+                <h2 class="text-3xl md:text-5xl font-bold text-white mb-2">偵測到跌倒!</h2>
+                <p class="text-lg md:text-xl text-red-200 mb-8">正在錄影並分析...</p>
+                <div id="ai-result"
+                    class="hidden w-full max-w-2xl bg-black/40 p-4 md:p-6 rounded-xl border border-red-400/30 mb-8 text-left">
                     <h3 class="text-red-400 font-bold mb-2"><i class="fa-brands fa-google mr-2"></i>AI 分析</h3>
                     <p id="ai-text" class="text-gray-200 text-sm"></p>
                 </div>
                 <button onclick="resetAlarm()"
-                    class="px-8 py-3 bg-white text-red-600 rounded-full font-bold hover:bg-gray-100">關閉警報</button>
+                    class="px-8 py-3 bg-white text-red-600 rounded-full font-bold hover:bg-gray-100 shadow-lg">關閉警報</button>
             </div>
         </div>
-    </main>
+    </div>
 
     <!-- Settings Modal -->
     <div id="settings-modal"
-        class="fixed inset-0 bg-black/80 backdrop-blur-sm hidden items-center justify-center z-[60]">
+        class="fixed inset-0 bg-black/80 backdrop-blur-sm hidden items-center justify-center z-[60] p-4">
         <div class="bg-slate-900 border border-white/10 rounded-2xl max-w-md w-full">
             <div class="p-6 border-b border-white/10 flex justify-between items-center">
                 <h2 class="text-xl font-bold">設定</h2>
@@ -126,13 +158,11 @@
                     <label class="block text-sm mb-2">Gemini API Key</label>
                     <input type="password" id="gemini-key"
                         class="w-full bg-slate-800 border border-white/10 rounded-lg px-4 py-2 text-white outline-none focus:ring-2 focus:ring-blue-500">
-                    <p class="text-xs text-gray-500 mt-1">用於 AI 場景分析</p>
                 </div>
                 <div>
                     <label class="block text-sm mb-2">Discord Webhook URL</label>
                     <input type="password" id="discord-webhook"
                         class="w-full bg-slate-800 border border-white/10 rounded-lg px-4 py-2 text-white outline-none focus:ring-2 focus:ring-blue-500">
-                    <p class="text-xs text-gray-500 mt-1">發送警報和影片</p>
                 </div>
             </div>
             <div class="p-6 border-t border-white/10 flex justify-end gap-2">
@@ -143,25 +173,26 @@
     </div>
 
     <!-- Video Modal -->
-    <div id="video-modal" class="fixed inset-0 bg-black/90 backdrop-blur-sm hidden items-center justify-center z-[70]">
-        <div class="bg-slate-900 border border-white/10 rounded-2xl max-w-4xl w-full">
-            <div class="p-6 border-b border-white/10 flex justify-between items-center">
-                <h2 class="text-xl font-bold">影片播放</h2>
+    <div id="video-modal"
+        class="fixed inset-0 bg-black/90 backdrop-blur-sm hidden items-center justify-center z-[70] p-4">
+        <div class="bg-slate-900 border border-white/10 rounded-2xl max-w-4xl w-full flex flex-col max-h-[90vh]">
+            <div class="p-4 md:p-6 border-b border-white/10 flex justify-between items-center shrink-0">
+                <h2 class="text-lg md:text-xl font-bold">影片播放</h2>
                 <button onclick="closeVideoModal()" class="text-gray-400 hover:text-white"><i
                         class="fa-solid fa-xmark"></i></button>
             </div>
-            <div class="p-6">
-                <video id="modal-video" controls class="w-full rounded-lg bg-black" style="max-height:70vh"></video>
+            <div class="p-4 md:p-6 flex-1 overflow-hidden flex items-center justify-center bg-black">
+                <video id="modal-video" controls class="max-w-full max-h-full rounded-lg" playsinline></video>
             </div>
-            <div class="p-6 border-t border-white/10 flex justify-between">
-                <div class="text-sm text-gray-400"><i class="fa-solid fa-info-circle mr-2"></i><span
+            <div class="p-4 md:p-6 border-t border-white/10 flex flex-col md:flex-row justify-between gap-4 shrink-0">
+                <div class="text-sm text-gray-400 flex items-center"><i class="fa-solid fa-info-circle mr-2"></i><span
                         id="video-format-info">WebM</span> 格式</div>
                 <div class="flex gap-2">
                     <button id="upload-btn" onclick="uploadCurrentVideo()"
-                        class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-sm"><i
-                            class="fa-brands fa-discord mr-2"></i>上傳 Discord</button>
+                        class="flex-1 md:flex-none px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-sm"><i
+                            class="fa-brands fa-discord mr-2"></i>上傳</button>
                     <button onclick="downloadCurrentVideo()"
-                        class="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm"><i
+                        class="flex-1 md:flex-none px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm"><i
                             class="fa-solid fa-download mr-2"></i>下載</button>
                 </div>
             </div>
@@ -177,15 +208,17 @@
             bufferChunks: [],
             stream: null,
             bufferRecorder: null,
-            fallFrameCount: 0, // 跌倒偵測計數器
-            recordingMimeType: null // 記錄當前使用的 MIME type
+            fallFrameCount: 0,
+            recordingMimeType: null,
+            currentCameraId: null,
+            isMobile: /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
         };
 
         const CONFIG = {
             preFallDuration: 5000,
             postFallDuration: 10000,
-            fallTriggerFrames: 10, // 需要連續偵測到幾幀才觸發
-            maxRecordings: 5 // 最多保留幾份錄影，避免記憶體爆滿
+            fallTriggerFrames: 10,
+            maxRecordings: 5
         };
 
         const els = {
@@ -201,13 +234,14 @@
             aiResult: document.getElementById('ai-result'),
             aiText: document.getElementById('ai-text'),
             recIndicator: document.getElementById('rec-indicator'),
-            modalVideo: document.getElementById('modal-video')
+            modalVideo: document.getElementById('modal-video'),
+            cameraSelect: document.getElementById('camera-select')
         };
 
         let currentVideoBlob = null;
         let currentVideoUrl = null;
         let currentVideoTimestamp = null;
-        let currentVideoExt = 'webm'; // 預設為 webm
+        let currentVideoExt = 'webm';
 
         // 設定管理
         function toggleSettings() {
@@ -235,10 +269,38 @@
             els.eventLog.prepend(div);
         }
 
+        // 相機管理
+        async function getCameras() {
+            try {
+                await navigator.mediaDevices.getUserMedia({ video: true }); // 請求權限
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const videoDevices = devices.filter(device => device.kind === 'videoinput');
+
+                els.cameraSelect.innerHTML = '';
+                videoDevices.forEach((device, index) => {
+                    const option = document.createElement('option');
+                    option.value = device.deviceId;
+                    option.text = device.label || `Camera ${index + 1}`;
+                    els.cameraSelect.appendChild(option);
+                });
+
+                if (STATE.currentCameraId && videoDevices.some(d => d.deviceId === STATE.currentCameraId)) {
+                    els.cameraSelect.value = STATE.currentCameraId;
+                }
+            } catch (e) {
+                console.error('Error listing cameras:', e);
+                addLog('無法取得相機列表', 'error');
+            }
+        }
+
+        async function switchCamera(deviceId) {
+            STATE.currentCameraId = deviceId;
+            await startCamera(deviceId);
+        }
+
         // 錄影系統
         function initRecordingStream() {
             if (els.canvas.captureStream) {
-                // 移除固定 FPS，讓瀏覽器決定最佳幀率，增加兼容性
                 STATE.stream = els.canvas.captureStream();
                 startBuffering();
                 addLog('錄影系統已啟動', 'success');
@@ -255,34 +317,27 @@
 
             STATE.bufferChunks = [];
 
-            // 優先嘗試 MP4，如果瀏覽器支援 (Chrome 109+, Safari)
             let options = { mimeType: 'video/webm' };
             let mimeType = 'video/webm';
 
-            const mp4Types = [
-                'video/mp4; codecs=avc1.42E01E,mp4a.40.2', // H.264 Baseline Profile
-                'video/mp4; codecs=avc1.4d002a', // H.264 Main Profile
-                'video/mp4' // Generic MP4
-            ];
-
-            const webmTypes = [
-                'video/webm; codecs=vp9',
-                'video/webm; codecs=vp8',
-                'video/webm'
-            ];
-
-            // 檢查 MP4 支援
-            for (const type of mp4Types) {
-                if (MediaRecorder.isTypeSupported(type)) {
-                    options = { mimeType: type };
-                    mimeType = type;
-                    break;
+            // 手機版強制嘗試 MOV (QuickTime) 或 MP4
+            if (STATE.isMobile) {
+                const mobileTypes = [
+                    'video/mp4',
+                    'video/quicktime', // iOS MOV
+                    'video/webm' // Fallback
+                ];
+                for (const type of mobileTypes) {
+                    if (MediaRecorder.isTypeSupported(type)) {
+                        options = { mimeType: type };
+                        mimeType = type;
+                        break;
+                    }
                 }
-            }
-
-            // 如果不支援 MP4，回退到 WebM
-            if (mimeType === 'video/webm') {
-                for (const type of webmTypes) {
+            } else {
+                // Desktop 優先 MP4
+                const mp4Types = ['video/mp4; codecs=avc1.42E01E,mp4a.40.2', 'video/mp4', 'video/webm; codecs=vp9', 'video/webm'];
+                for (const type of mp4Types) {
                     if (MediaRecorder.isTypeSupported(type)) {
                         options = { mimeType: type };
                         mimeType = type;
@@ -291,14 +346,13 @@
                 }
             }
 
-            STATE.recordingMimeType = mimeType; // 儲存實際使用的 MIME type
+            STATE.recordingMimeType = mimeType;
 
             try {
                 const recorder = new MediaRecorder(STATE.stream, options);
                 recorder.ondataavailable = (e) => {
                     if (e.data && e.data.size > 0) {
                         STATE.bufferChunks.push({ data: e.data, timestamp: Date.now() });
-                        // 只在非錄影狀態下清理舊緩衝
                         if (!STATE.isRecording) {
                             const cutoff = Date.now() - CONFIG.preFallDuration;
                             while (STATE.bufferChunks.length > 0 && STATE.bufferChunks[0].timestamp < cutoff) {
@@ -307,10 +361,9 @@
                         }
                     }
                 };
-                // 每 1000ms 觸發一次 dataavailable
                 recorder.start(1000);
                 STATE.bufferRecorder = recorder;
-                console.log(`MediaRecorder started with ${options.mimeType}`);
+                console.log(`MediaRecorder started with ${options.mimeType} (Mobile: ${STATE.isMobile})`);
             } catch (e) {
                 console.error('MediaRecorder error:', e);
                 addLog('錄影器錯誤: ' + e.message, 'error');
@@ -323,7 +376,6 @@
             els.recIndicator.classList.remove('hidden');
             els.recIndicator.classList.add('flex');
 
-            // 立即請求關鍵幀（如果可能）
             if (STATE.bufferRecorder && STATE.bufferRecorder.state === 'recording') {
                 STATE.bufferRecorder.requestData();
             }
@@ -338,7 +390,6 @@
             STATE.isRecording = false;
             els.recIndicator.classList.add('hidden');
 
-            // 確保取得最後的數據
             if (STATE.bufferRecorder && STATE.bufferRecorder.state === 'recording') {
                 STATE.bufferRecorder.requestData();
             }
@@ -349,11 +400,16 @@
             }
 
             const mimeType = STATE.recordingMimeType || 'video/webm';
-            const isMp4 = mimeType.includes('mp4');
-            const ext = isMp4 ? 'mp4' : 'webm';
+
+            // 手機版強制使用 .mov，其他看 MIME type
+            let ext = 'webm';
+            if (STATE.isMobile) {
+                ext = 'mov';
+            } else if (mimeType.includes('mp4')) {
+                ext = 'mp4';
+            }
 
             const blob = new Blob(STATE.bufferChunks.map(c => c.data), { type: mimeType });
-            console.log(`Video blob created: ${blob.size} bytes, type: ${mimeType}`);
 
             if (blob.size === 0) {
                 addLog('錄影失敗：檔案大小為 0', 'error');
@@ -368,19 +424,18 @@
             currentVideoTimestamp = timestamp;
             currentVideoExt = ext;
 
-            // 記憶體管理：限制錄影數量
+            // 記憶體管理
             const recordingsList = els.recordings;
             if (recordingsList.children.length >= CONFIG.maxRecordings) {
                 const oldItem = recordingsList.lastElementChild;
                 if (oldItem && oldItem.dataset.url) {
-                    URL.revokeObjectURL(oldItem.dataset.url); // 釋放記憶體
-                    console.log(`Revoked URL: ${oldItem.dataset.url}`);
+                    URL.revokeObjectURL(oldItem.dataset.url);
                 }
                 recordingsList.removeChild(oldItem);
             }
 
             const item = document.createElement('div');
-            item.dataset.url = url; // 儲存 URL 以便後續釋放
+            item.dataset.url = url;
             item.className = 'bg-slate-800/50 p-2 rounded border border-white/5 flex justify-between items-center hover:bg-slate-800/70 cursor-pointer';
             item.onclick = () => openVideoModal(url, blob, timestamp, ext);
             item.innerHTML = `
@@ -425,13 +480,10 @@
             els.videoModal.classList.remove('hidden');
             els.videoModal.classList.add('flex');
 
-            // 更新彈窗資訊
             const infoDiv = document.getElementById('video-format-info');
             if (infoDiv) infoDiv.textContent = ext.toUpperCase();
 
-            els.modalVideo.play().catch(e => {
-                console.error("Auto-play failed:", e);
-            });
+            els.modalVideo.play().catch(e => console.error("Auto-play failed:", e));
         }
 
         function closeVideoModal() {
@@ -465,10 +517,9 @@
             await uploadVideoToDiscord(currentVideoBlob, currentVideoTimestamp, currentVideoExt);
 
             btn.disabled = false;
-            btn.innerHTML = '<i class="fa-brands fa-discord mr-2"></i>上傳 Discord';
+            btn.innerHTML = '<i class="fa-brands fa-discord mr-2"></i>上傳';
         }
 
-        // Discord 上傳
         async function uploadVideoToDiscord(blob, timestamp, ext = 'webm') {
             const webhook = localStorage.getItem('discord_webhook');
             if (!webhook) return;
@@ -558,7 +609,7 @@
         // 警報系統
         function resetAlarm() {
             STATE.isAlarmActive = false;
-            STATE.fallFrameCount = 0; // 重置計數器
+            STATE.fallFrameCount = 0;
             els.alarm.classList.add('hidden');
             els.alarm.classList.remove('flex');
             els.aiResult.classList.add('hidden');
@@ -574,7 +625,6 @@
             triggerFallEvent();
         }
 
-        // 跌倒檢測 (改良版)
         function checkFall(landmarks) {
             if (STATE.isAlarmActive) return;
 
@@ -583,39 +633,24 @@
             const rightShoulder = landmarks[12];
             const leftHip = landmarks[23];
             const rightHip = landmarks[24];
-            const leftAnkle = landmarks[27];
-            const rightAnkle = landmarks[28];
 
-            // 計算身體中心點
             const shoulderMidY = (leftShoulder.y + rightShoulder.y) / 2;
             const hipMidY = (leftHip.y + rightHip.y) / 2;
-            const ankleMidY = (leftAnkle.y + rightAnkle.y) / 2;
-
             const shoulderMidX = (leftShoulder.x + rightShoulder.x) / 2;
             const hipMidX = (leftHip.x + rightHip.x) / 2;
 
-            // 計算身體傾斜角度 (相對於垂直線)
-            // 使用肩膀和臀部的連線
             const verticalDist = Math.abs(shoulderMidY - hipMidY);
             const horizontalDist = Math.abs(shoulderMidX - hipMidX);
-            // atan2 返回弧度，轉換為角度。垂直時 verticalDist 大，horizontalDist 小，angle 趨近 90
             const angleRad = Math.atan2(verticalDist, horizontalDist);
             const angleDeg = angleRad * (180 / Math.PI);
 
-            // 顯示角度 (90度為直立，0度為水平)
             document.getElementById('angle').textContent = Math.round(angleDeg) + '°';
 
-            // 判斷邏輯：
-            // 1. 角度小於 45 度 (身體趨向水平)
-            // 2. 臀部位置較低 (y > 0.5，螢幕座標 y 向下為正，0為頂部，1為底部)
-            // 3. 持續多幀 (避免誤判)
-
             const isHorizontal = angleDeg < 45;
-            const isLow = hipMidY > 0.5; // 臀部在畫面下半部
+            const isLow = hipMidY > 0.5;
 
             if (isHorizontal && isLow) {
                 STATE.fallFrameCount++;
-                // 視覺回饋：顯示警告狀態
                 if (STATE.fallFrameCount > 3) {
                     document.getElementById('pose-status').textContent = `⚠️ 疑似跌倒 (${STATE.fallFrameCount}/${CONFIG.fallTriggerFrames})`;
                 }
@@ -625,14 +660,11 @@
                     triggerAlarm();
                 }
             } else {
-                // 如果恢復直立或不滿足條件，重置計數器
-                // 可以加入一個緩衝，例如減少計數而不是直接歸零，這裡先直接歸零
                 STATE.fallFrameCount = 0;
                 document.getElementById('pose-status').textContent = '監控中';
             }
         }
 
-        // MediaPipe 結果處理
         function onResults(results) {
             const now = Date.now();
             const fps = Math.round(1000 / (now - STATE.lastFrameTime));
@@ -652,7 +684,6 @@
             }
             els.ctx.restore();
 
-            // 3D 渲染
             if (results.poseWorldLandmarks) {
                 results.poseWorldLandmarks.forEach((lm, index) => {
                     if (skeletonPoints[index]) {
@@ -675,8 +706,8 @@
             renderer.render(scene, camera);
         }
 
-        // 3D 場景初始化
         let scene, camera, renderer, controls, skeletonPoints = [], skeletonLines = [];
+        let pose, cameraUtils;
 
         function initThreeJS() {
             scene = new THREE.Scene();
@@ -732,35 +763,70 @@
             });
         }
 
-        // 相機啟動
-        async function startCamera() {
+        async function startCamera(deviceId = null) {
             try {
-                const pose = new Pose({
-                    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
-                });
+                if (cameraUtils) {
+                    await cameraUtils.stop();
+                }
 
-                pose.setOptions({
-                    modelComplexity: 1,
-                    smoothLandmarks: true,
-                    minDetectionConfidence: 0.5,
-                    minTrackingConfidence: 0.5
-                });
+                if (!pose) {
+                    pose = new Pose({
+                        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
+                    });
 
-                pose.onResults(onResults);
+                    pose.setOptions({
+                        modelComplexity: 1,
+                        smoothLandmarks: true,
+                        minDetectionConfidence: 0.5,
+                        minTrackingConfidence: 0.5
+                    });
 
-                const camera = new Camera(els.video, {
-                    onFrame: async () => {
-                        await pose.send({ image: els.video });
-                    },
+                    pose.onResults(onResults);
+                }
+
+                // 重新取得相機列表以更新 UI
+                await getCameras();
+
+                // 如果沒有指定 deviceId，且有列表，使用列表中的第一個（通常是預設）
+                // 或者讓 Camera Utils 自動處理
+
+                const constraints = {
                     width: 1280,
                     height: 720
+                };
+
+                if (deviceId) {
+                    constraints.deviceId = { exact: deviceId };
+                }
+
+                // 這裡使用 MediaPipe 的 Camera Utils，它封裝了 getUserMedia
+                // 但它不直接支援傳入 deviceId，所以我們需要稍微繞過一下，或者直接用 video 元素
+                // MediaPipe Camera Utils 構造函數第二個參數是 options
+                // 讓我們嘗試直接傳遞 video 元素並手動設置 srcObject，這樣控制權更大
+
+                // 修正：MediaPipe Camera Utils 主要是為了方便，但切換鏡頭比較麻煩。
+                // 我們改用原生的 getUserMedia 獲取 stream，然後賦值給 video，再用 pose.send
+
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: deviceId ? { deviceId: { exact: deviceId } } : { width: 1280, height: 720 }
                 });
 
-                await camera.start();
-                addLog('攝影機啟動成功', 'success');
-                addLog('錄影系統準備中...', 'info');
+                els.video.srcObject = stream;
+                await els.video.play();
 
-                // 等待 canvas 準備好再啟動錄影
+                // 啟動一個循環來發送幀給 MediaPipe
+                if (!window.poseLoopStarted) {
+                    window.poseLoopStarted = true;
+                    async function poseLoop() {
+                        await pose.send({ image: els.video });
+                        requestAnimationFrame(poseLoop);
+                    }
+                    poseLoop();
+                }
+
+                addLog('攝影機啟動成功', 'success');
+
+                // 延遲啟動錄影串流
                 setTimeout(() => {
                     initRecordingStream();
                 }, 1000);
