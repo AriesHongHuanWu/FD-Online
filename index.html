@@ -76,7 +76,8 @@
                 <div id="event-log" class="text-xs space-y-1"></div>
             </div>
             <div class="p-4 border-t border-white/10">
-                <h3 class="text-sm font-semibold mb-2">錄影記錄</h3>
+                <h3 class="text-sm font-semibold mb-2">錄影記錄 <span class="text-xs text-gray-500 font-normal">(保留最近 5
+                        筆)</span></h3>
                 <div id="recordings" class="space-y-2"></div>
             </div>
         </aside>
@@ -183,7 +184,8 @@
         const CONFIG = {
             preFallDuration: 5000,
             postFallDuration: 10000,
-            fallTriggerFrames: 10 // 需要連續偵測到幾幀才觸發
+            fallTriggerFrames: 10, // 需要連續偵測到幾幀才觸發
+            maxRecordings: 5 // 最多保留幾份錄影，避免記憶體爆滿
         };
 
         const els = {
@@ -366,7 +368,19 @@
             currentVideoTimestamp = timestamp;
             currentVideoExt = ext;
 
+            // 記憶體管理：限制錄影數量
+            const recordingsList = els.recordings;
+            if (recordingsList.children.length >= CONFIG.maxRecordings) {
+                const oldItem = recordingsList.lastElementChild;
+                if (oldItem && oldItem.dataset.url) {
+                    URL.revokeObjectURL(oldItem.dataset.url); // 釋放記憶體
+                    console.log(`Revoked URL: ${oldItem.dataset.url}`);
+                }
+                recordingsList.removeChild(oldItem);
+            }
+
             const item = document.createElement('div');
+            item.dataset.url = url; // 儲存 URL 以便後續釋放
             item.className = 'bg-slate-800/50 p-2 rounded border border-white/5 flex justify-between items-center hover:bg-slate-800/70 cursor-pointer';
             item.onclick = () => openVideoModal(url, blob, timestamp, ext);
             item.innerHTML = `
