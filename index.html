@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI FallGuard Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            background: #020617;
+            color: #e2e8f0;
+            font-family: 'Inter', sans-serif;
+        }
+
+        .glass {
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        @keyframes pulse-red {
+
+            0%,
+            100% {
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+            }
+
+            50% {
+                box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);
+            }
+        }
+
+        .animate-pulse-red {
+            animation: pulse-red 2s infinite;
+        }
+    </style>
+</head>
+
+<body class="h-screen flex flex-col overflow-hidden">
+    <header class="h-16 glass flex items-center justify-between px-6 z-50">
+        <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+                <i class="fa-solid fa-person-falling text-white text-sm"></i>
+            </div>
+            <h1 class="text-xl font-bold text-white">AI FallGuard <span class="text-blue-400">Pro</span></h1>
+        </div>
+        <div class="flex gap-4">
+            <div id="rec-indicator"
+                class="hidden items-center gap-2 px-3 py-1 rounded-full bg-red-500/20 border border-red-500/50 text-red-400 text-xs">
+                <div class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>錄影中
+            </div>
+            <button onclick="toggleSettings()" class="p-2 rounded-lg hover:bg-white/10"><i
+                    class="fa-solid fa-gear"></i></button>
+        </div>
+    </header>
+
+    <main class="flex-1 flex overflow-hidden">
+        <aside class="w-80 glass border-r border-white/10 flex flex-col">
+            <div class="p-4 border-b border-white/5">
+                <div class="bg-slate-800/50 rounded-xl p-4 border border-white/5">
+                    <div id="pose-status" class="text-lg font-bold mb-1">監控中</div>
+                    <div class="text-sm text-gray-400">FPS: <span id="fps">0</span> | 角度: <span id="angle">0°</span>
+                    </div>
+                </div>
+            </div>
+            <div class="flex-1 overflow-auto p-4">
+                <h3 class="text-sm font-semibold mb-2">事件日誌</h3>
+                <div id="event-log" class="text-xs space-y-1"></div>
+            </div>
+            <div class="p-4 border-t border-white/10">
+                <h3 class="text-sm font-semibold mb-2">錄影記錄</h3>
+                <div id="recordings" class="space-y-2"></div>
+            </div>
+        </aside>
+
+        <div class="flex-1 relative bg-black flex">
+            <video id="input-video" class="hidden"></video>
+            <div class="w-1/2 relative border-r border-white/10">
+                <div class="absolute top-4 left-4 z-10 px-2 py-1 rounded bg-black/50 text-xs border border-white/10">
+                    原始影像</div>
+                <canvas id="output-canvas" class="w-full h-full"></canvas>
+            </div>
+            <div class="w-1/2 relative bg-slate-900">
+                <div class="absolute top-4 left-4 z-10 px-2 py-1 rounded bg-black/50 text-xs border border-white/10">3D
+                    骨架</div>
+                <div id="three-canvas" class="w-full h-full"></div>
+            </div>
+
+            <div id="alarm"
+                class="absolute inset-0 bg-red-900/80 backdrop-blur-sm hidden flex-col items-center justify-center z-50">
+                <div class="animate-pulse-red rounded-full p-8 bg-red-600 mb-4">
+                    <i class="fa-solid fa-triangle-exclamation text-6xl text-white"></i>
+                </div>
+                <h2 class="text-5xl font-bold text-white mb-2">偵測到跌倒!</h2>
+                <p class="text-xl text-red-200 mb-8">正在錄影並分析...</p>
+                <div id="ai-result" class="hidden max-w-2xl bg-black/40 p-6 rounded-xl border border-red-400/30 mb-8">
+                    <h3 class="text-red-400 font-bold mb-2"><i class="fa-brands fa-google mr-2"></i>AI 分析</h3>
+                    <p id="ai-text" class="text-gray-200 text-sm"></p>
+                </div>
+                <button onclick="resetAlarm()"
+                    class="px-8 py-3 bg-white text-red-600 rounded-full font-bold hover:bg-gray-100">關閉警報</button>
+            </div>
+        </div>
+    </main>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal"
+        class="fixed inset-0 bg-black/80 backdrop-blur-sm hidden items-center justify-center z-[60]">
+        <div class="bg-slate-900 border border-white/10 rounded-2xl max-w-md w-full">
+            <div class="p-6 border-b border-white/10 flex justify-between items-center">
+                <h2 class="text-xl font-bold">設定</h2>
+                <button onclick="toggleSettings()" class="text-gray-400 hover:text-white"><i
+                        class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="p-6 space-y-4">
+                <div>
+                    <label class="block text-sm mb-2">Gemini API Key</label>
+                    <input type="password" id="gemini-key"
+                        class="w-full bg-slate-800 border border-white/10 rounded-lg px-4 py-2 text-white outline-none focus:ring-2 focus:ring-blue-500">
+                    <p class="text-xs text-gray-500 mt-1">用於 AI 場景分析</p>
+                </div>
+                <div>
+                    <label class="block text-sm mb-2">Discord Webhook URL</label>
+                    <input type="password" id="discord-webhook"
+                        class="w-full bg-slate-800 border border-white/10 rounded-lg px-4 py-2 text-white outline-none focus:ring-2 focus:ring-blue-500">
+                    <p class="text-xs text-gray-500 mt-1">發送警報和影片</p>
+                </div>
+            </div>
+            <div class="p-6 border-t border-white/10 flex justify-end gap-2">
+                <button onclick="toggleSettings()" class="px-4 py-2 rounded-lg hover:bg-white/10">取消</button>
+                <button onclick="saveSettings()" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg">儲存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Video Modal -->
+    <div id="video-modal" class="fixed inset-0 bg-black/90 backdrop-blur-sm hidden items-center justify-center z-[70]">
+        <div class="bg-slate-900 border border-white/10 rounded-2xl max-w-4xl w-full">
+            <div class="p-6 border-b border-white/10 flex justify-between items-center">
+                <h2 class="text-xl font-bold">影片播放</h2>
+                <button onclick="closeVideoModal()" class="text-gray-400 hover:text-white"><i
+                        class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="p-6">
+                <video id="modal-video" controls class="w-full rounded-lg bg-black" style="max-height:70vh"></video>
+            </div>
+            <div class="p-6 border-t border-white/10 flex justify-between">
+                <div class="text-sm text-gray-400"><i class="fa-solid fa-info-circle mr-2"></i><span
+                        id="video-format-info">WebM</span> 格式</div>
+                <div class="flex gap-2">
+                    <button id="upload-btn" onclick="uploadCurrentVideo()"
+                        class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-sm"><i
+                            class="fa-brands fa-discord mr-2"></i>上傳 Discord</button>
+                    <button onclick="downloadCurrentVideo()"
+                        class="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm"><i
+                            class="fa-solid fa-download mr-2"></i>下載</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 全域狀態
+        const STATE = {
+            isAlarmActive: false,
+            isRecording: false,
+            lastFrameTime: 0,
+            bufferChunks: [],
+            stream: null,
+            bufferRecorder: null,
+            fallFrameCount: 0, // 跌倒偵測計數器
+            recordingMimeType: null // 記錄當前使用的 MIME type
+        };
+
+        const CONFIG = {
+            preFallDuration: 5000,
+            postFallDuration: 10000,
+            fallTriggerFrames: 10 // 需要連續偵測到幾幀才觸發
+        };
+
+        const els = {
+            video: document.getElementById('input-video'),
+            canvas: document.getElementById('output-canvas'),
+            ctx: document.getElementById('output-canvas').getContext('2d'),
+            threeContainer: document.getElementById('three-canvas'),
+            alarm: document.getElementById('alarm'),
+            settings: document.getElementById('settings-modal'),
+            videoModal: document.getElementById('video-modal'),
+            eventLog: document.getElementById('event-log'),
+            recordings: document.getElementById('recordings'),
+            aiResult: document.getElementById('ai-result'),
+            aiText: document.getElementById('ai-text'),
+            recIndicator: document.getElementById('rec-indicator'),
+            modalVideo: document.getElementById('modal-video')
+        };
+
+        let currentVideoBlob = null;
+        let currentVideoUrl = null;
+        let currentVideoTimestamp = null;
+        let currentVideoExt = 'webm'; // 預設為 webm
+
+        // 設定管理
+        function toggleSettings() {
+            els.settings.classList.toggle('hidden');
+            els.settings.classList.toggle('flex');
+        }
+
+        function saveSettings() {
+            localStorage.setItem('gemini_key', document.getElementById('gemini-key').value);
+            localStorage.setItem('discord_webhook', document.getElementById('discord-webhook').value);
+            toggleSettings();
+            addLog('設定已儲存', 'success');
+        }
+
+        function loadSettings() {
+            document.getElementById('gemini-key').value = localStorage.getItem('gemini_key') || '';
+            document.getElementById('discord-webhook').value = localStorage.getItem('discord_webhook') || '';
+        }
+
+        function addLog(msg, type = 'info') {
+            const div = document.createElement('div');
+            const color = type === 'error' ? 'text-red-400' : (type === 'success' ? 'text-green-400' : 'text-blue-400');
+            div.className = color;
+            div.textContent = new Date().toLocaleTimeString() + ' - ' + msg;
+            els.eventLog.prepend(div);
+        }
+
+        // 錄影系統
+        function initRecordingStream() {
+            if (els.canvas.captureStream) {
+                // 移除固定 FPS，讓瀏覽器決定最佳幀率，增加兼容性
+                STATE.stream = els.canvas.captureStream();
+                startBuffering();
+                addLog('錄影系統已啟動', 'success');
+            } else {
+                addLog('不支援 Canvas 錄影', 'error');
+            }
+        }
+
+        function startBuffering() {
+            if (!STATE.stream) return;
+            if (STATE.bufferRecorder && STATE.bufferRecorder.state !== 'inactive') {
+                STATE.bufferRecorder.stop();
+            }
+
+            STATE.bufferChunks = [];
+
+            // 優先嘗試 MP4，如果瀏覽器支援 (Chrome 109+, Safari)
+            let options = { mimeType: 'video/webm' };
+            let mimeType = 'video/webm';
+
+            const mp4Types = [
+                'video/mp4; codecs=avc1.42E01E,mp4a.40.2', // H.264 Baseline Profile
+                'video/mp4; codecs=avc1.4d002a', // H.264 Main Profile
+                'video/mp4' // Generic MP4
+            ];
+
+            const webmTypes = [
+                'video/webm; codecs=vp9',
+                'video/webm; codecs=vp8',
+                'video/webm'
+            ];
+
+            // 檢查 MP4 支援
+            for (const type of mp4Types) {
+                if (MediaRecorder.isTypeSupported(type)) {
+                    options = { mimeType: type };
+                    mimeType = type;
+                    break;
+                }
+            }
+
+            // 如果不支援 MP4，回退到 WebM
+            if (mimeType === 'video/webm') {
+                for (const type of webmTypes) {
+                    if (MediaRecorder.isTypeSupported(type)) {
+                        options = { mimeType: type };
+                        mimeType = type;
+                        break;
+                    }
+                }
+            }
+
+            STATE.recordingMimeType = mimeType; // 儲存實際使用的 MIME type
+
+            try {
+                const recorder = new MediaRecorder(STATE.stream, options);
+                recorder.ondataavailable = (e) => {
+                    if (e.data && e.data.size > 0) {
+                        STATE.bufferChunks.push({ data: e.data, timestamp: Date.now() });
+                        // 只在非錄影狀態下清理舊緩衝
+                        if (!STATE.isRecording) {
+                            const cutoff = Date.now() - CONFIG.preFallDuration;
+                            while (STATE.bufferChunks.length > 0 && STATE.bufferChunks[0].timestamp < cutoff) {
+                                STATE.bufferChunks.shift();
+                            }
+                        }
+                    }
+                };
+                // 每 1000ms 觸發一次 dataavailable
+                recorder.start(1000);
+                STATE.bufferRecorder = recorder;
+                console.log(`MediaRecorder started with ${options.mimeType}`);
+            } catch (e) {
+                console.error('MediaRecorder error:', e);
+                addLog('錄影器錯誤: ' + e.message, 'error');
+            }
+        }
+
+        async function triggerFallEvent() {
+            if (STATE.isRecording) return;
+            STATE.isRecording = true;
+            els.recIndicator.classList.remove('hidden');
+            els.recIndicator.classList.add('flex');
+
+            // 立即請求關鍵幀（如果可能）
+            if (STATE.bufferRecorder && STATE.bufferRecorder.state === 'recording') {
+                STATE.bufferRecorder.requestData();
+            }
+
+            const snapshot = await captureSnapshot();
+            analyzeWithAI(snapshot);
+
+            setTimeout(() => finishRecording(), CONFIG.postFallDuration);
+        }
+
+        function finishRecording() {
+            STATE.isRecording = false;
+            els.recIndicator.classList.add('hidden');
+
+            // 確保取得最後的數據
+            if (STATE.bufferRecorder && STATE.bufferRecorder.state === 'recording') {
+                STATE.bufferRecorder.requestData();
+            }
+
+            if (STATE.bufferChunks.length === 0) {
+                addLog('錄影失敗：沒有數據', 'error');
+                return;
+            }
+
+            const mimeType = STATE.recordingMimeType || 'video/webm';
+            const isMp4 = mimeType.includes('mp4');
+            const ext = isMp4 ? 'mp4' : 'webm';
+
+            const blob = new Blob(STATE.bufferChunks.map(c => c.data), { type: mimeType });
+            console.log(`Video blob created: ${blob.size} bytes, type: ${mimeType}`);
+
+            if (blob.size === 0) {
+                addLog('錄影失敗：檔案大小為 0', 'error');
+                return;
+            }
+
+            const url = URL.createObjectURL(blob);
+            const timestamp = new Date().toLocaleString();
+
+            currentVideoBlob = blob;
+            currentVideoUrl = url;
+            currentVideoTimestamp = timestamp;
+            currentVideoExt = ext;
+
+            const item = document.createElement('div');
+            item.className = 'bg-slate-800/50 p-2 rounded border border-white/5 flex justify-between items-center hover:bg-slate-800/70 cursor-pointer';
+            item.onclick = () => openVideoModal(url, blob, timestamp, ext);
+            item.innerHTML = `
+                <div class="flex items-center gap-2">
+                    <div class="w-8 h-8 bg-red-500/20 rounded flex items-center justify-center text-red-400">
+                        <i class="fa-solid fa-video"></i>
+                    </div>
+                    <div class="text-xs">
+                        <div class="text-gray-300 font-medium">跌倒事件</div>
+                        <div class="text-gray-500">${timestamp}</div>
+                    </div>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="event.stopPropagation(); openVideoModal('${url}', currentVideoBlob, '${timestamp}', '${ext}')" class="p-2 text-gray-400 hover:text-blue-400" title="播放">
+                        <i class="fa-solid fa-play"></i>
+                    </button>
+                    <button onclick="event.stopPropagation(); downloadVideo('${url}', '${timestamp}', '${ext}')" class="p-2 text-gray-400 hover:text-green-400" title="下載">
+                        <i class="fa-solid fa-download"></i>
+                    </button>
+                </div>
+            `;
+            els.recordings.prepend(item);
+            addLog(`錄影已儲存 (${ext.toUpperCase()})`, 'success');
+
+            uploadVideoToDiscord(blob, timestamp, ext);
+        }
+
+        function captureSnapshot() {
+            return new Promise(resolve => {
+                els.canvas.toBlob(blob => resolve(blob), 'image/jpeg', 0.8);
+            });
+        }
+
+        // 影片彈窗
+        function openVideoModal(url, blob, timestamp, ext = 'webm') {
+            currentVideoUrl = url;
+            currentVideoBlob = blob || currentVideoBlob;
+            currentVideoTimestamp = timestamp || currentVideoTimestamp;
+            currentVideoExt = ext;
+
+            els.modalVideo.src = url;
+            els.videoModal.classList.remove('hidden');
+            els.videoModal.classList.add('flex');
+
+            // 更新彈窗資訊
+            const infoDiv = document.getElementById('video-format-info');
+            if (infoDiv) infoDiv.textContent = ext.toUpperCase();
+
+            els.modalVideo.play().catch(e => {
+                console.error("Auto-play failed:", e);
+            });
+        }
+
+        function closeVideoModal() {
+            els.modalVideo.pause();
+            els.modalVideo.src = '';
+            els.videoModal.classList.add('hidden');
+            els.videoModal.classList.remove('flex');
+        }
+
+        function downloadCurrentVideo() {
+            if (!currentVideoUrl) return;
+            downloadVideo(currentVideoUrl, currentVideoTimestamp, currentVideoExt);
+        }
+
+        function downloadVideo(url, timestamp, ext = 'webm') {
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `fall_event_${timestamp.replace(/[: ]/g, '_')}.${ext}`;
+            a.click();
+        }
+
+        async function uploadCurrentVideo() {
+            if (!currentVideoBlob) {
+                addLog('沒有影片可上傳', 'error');
+                return;
+            }
+            const btn = document.getElementById('upload-btn');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>上傳中...';
+
+            await uploadVideoToDiscord(currentVideoBlob, currentVideoTimestamp, currentVideoExt);
+
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa-brands fa-discord mr-2"></i>上傳 Discord';
+        }
+
+        // Discord 上傳
+        async function uploadVideoToDiscord(blob, timestamp, ext = 'webm') {
+            const webhook = localStorage.getItem('discord_webhook');
+            if (!webhook) return;
+
+            try {
+                const formData = new FormData();
+                formData.append('file', blob, `fall_event_${Date.now()}.${ext}`);
+                formData.append('payload_json', JSON.stringify({
+                    username: "FallGuard Pro",
+                    content: `⚠️ **跌倒事件**\n時間: ${timestamp}\n影片已自動上傳 (${ext.toUpperCase()})`
+                }));
+
+                const response = await fetch(webhook, { method: 'POST', body: formData });
+                if (response.ok) {
+                    addLog('影片已上傳至 Discord', 'success');
+                } else {
+                    addLog('Discord 上傳失敗', 'error');
+                }
+            } catch (e) {
+                console.error('Discord upload error:', e);
+                addLog('Discord 上傳錯誤', 'error');
+            }
+        }
+
+        // AI 分析
+        async function analyzeWithAI(imageBlob) {
+            const key = localStorage.getItem('gemini_key');
+            if (!key) {
+                addLog('未設定 Gemini API Key', 'error');
+                return;
+            }
+
+            els.aiResult.classList.remove('hidden');
+            els.aiText.textContent = '正在分析...';
+
+            try {
+                const reader = new FileReader();
+                reader.readAsDataURL(imageBlob);
+                reader.onloadend = async () => {
+                    const base64 = reader.result.split(',')[1];
+                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${key}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            contents: [{
+                                parts: [
+                                    { text: '分析這張圖片。偵測到跌倒。請描述人物姿勢、可能原因和嚴重程度。保持簡潔。' },
+                                    { inline_data: { mime_type: 'image/jpeg', data: base64 } }
+                                ]
+                            }]
+                        })
+                    });
+                    const data = await response.json();
+                    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '分析失敗';
+                    els.aiText.textContent = text;
+                    sendDiscordWebhook(text, imageBlob);
+                };
+            } catch (e) {
+                console.error('AI error:', e);
+                els.aiText.textContent = 'AI 分析錯誤';
+            }
+        }
+
+        async function sendDiscordWebhook(text, imageBlob) {
+            const webhook = localStorage.getItem('discord_webhook');
+            if (!webhook) return;
+
+            try {
+                const formData = new FormData();
+                formData.append('file', imageBlob, `fall_snapshot_${Date.now()}.jpg`);
+                formData.append('payload_json', JSON.stringify({
+                    username: "FallGuard Pro",
+                    embeds: [{
+                        title: '⚠️ 跌倒偵測 - AI 分析',
+                        description: text,
+                        color: 15158332,
+                        timestamp: new Date().toISOString()
+                    }]
+                }));
+                await fetch(webhook, { method: 'POST', body: formData });
+                addLog('Discord 通知已發送', 'success');
+            } catch (e) {
+                console.error('Discord error:', e);
+            }
+        }
+
+        // 警報系統
+        function resetAlarm() {
+            STATE.isAlarmActive = false;
+            STATE.fallFrameCount = 0; // 重置計數器
+            els.alarm.classList.add('hidden');
+            els.alarm.classList.remove('flex');
+            els.aiResult.classList.add('hidden');
+            document.getElementById('pose-status').textContent = '監控中';
+        }
+
+        function triggerAlarm() {
+            if (STATE.isAlarmActive) return;
+            STATE.isAlarmActive = true;
+            els.alarm.classList.remove('hidden');
+            els.alarm.classList.add('flex');
+            addLog('偵測到跌倒!', 'error');
+            triggerFallEvent();
+        }
+
+        // 跌倒檢測 (改良版)
+        function checkFall(landmarks) {
+            if (STATE.isAlarmActive) return;
+
+            const nose = landmarks[0];
+            const leftShoulder = landmarks[11];
+            const rightShoulder = landmarks[12];
+            const leftHip = landmarks[23];
+            const rightHip = landmarks[24];
+            const leftAnkle = landmarks[27];
+            const rightAnkle = landmarks[28];
+
+            // 計算身體中心點
+            const shoulderMidY = (leftShoulder.y + rightShoulder.y) / 2;
+            const hipMidY = (leftHip.y + rightHip.y) / 2;
+            const ankleMidY = (leftAnkle.y + rightAnkle.y) / 2;
+
+            const shoulderMidX = (leftShoulder.x + rightShoulder.x) / 2;
+            const hipMidX = (leftHip.x + rightHip.x) / 2;
+
+            // 計算身體傾斜角度 (相對於垂直線)
+            // 使用肩膀和臀部的連線
+            const verticalDist = Math.abs(shoulderMidY - hipMidY);
+            const horizontalDist = Math.abs(shoulderMidX - hipMidX);
+            // atan2 返回弧度，轉換為角度。垂直時 verticalDist 大，horizontalDist 小，angle 趨近 90
+            const angleRad = Math.atan2(verticalDist, horizontalDist);
+            const angleDeg = angleRad * (180 / Math.PI);
+
+            // 顯示角度 (90度為直立，0度為水平)
+            document.getElementById('angle').textContent = Math.round(angleDeg) + '°';
+
+            // 判斷邏輯：
+            // 1. 角度小於 45 度 (身體趨向水平)
+            // 2. 臀部位置較低 (y > 0.5，螢幕座標 y 向下為正，0為頂部，1為底部)
+            // 3. 持續多幀 (避免誤判)
+
+            const isHorizontal = angleDeg < 45;
+            const isLow = hipMidY > 0.5; // 臀部在畫面下半部
+
+            if (isHorizontal && isLow) {
+                STATE.fallFrameCount++;
+                // 視覺回饋：顯示警告狀態
+                if (STATE.fallFrameCount > 3) {
+                    document.getElementById('pose-status').textContent = `⚠️ 疑似跌倒 (${STATE.fallFrameCount}/${CONFIG.fallTriggerFrames})`;
+                }
+
+                if (STATE.fallFrameCount >= CONFIG.fallTriggerFrames) {
+                    document.getElementById('pose-status').textContent = '⚠️ 偵測到跌倒!';
+                    triggerAlarm();
+                }
+            } else {
+                // 如果恢復直立或不滿足條件，重置計數器
+                // 可以加入一個緩衝，例如減少計數而不是直接歸零，這裡先直接歸零
+                STATE.fallFrameCount = 0;
+                document.getElementById('pose-status').textContent = '監控中';
+            }
+        }
+
+        // MediaPipe 結果處理
+        function onResults(results) {
+            const now = Date.now();
+            const fps = Math.round(1000 / (now - STATE.lastFrameTime));
+            STATE.lastFrameTime = now;
+            document.getElementById('fps').textContent = fps;
+
+            els.canvas.width = els.canvas.offsetWidth;
+            els.canvas.height = els.canvas.offsetHeight;
+            els.ctx.save();
+            els.ctx.clearRect(0, 0, els.canvas.width, els.canvas.height);
+            els.ctx.drawImage(results.image, 0, 0, els.canvas.width, els.canvas.height);
+
+            if (results.poseLandmarks) {
+                drawConnectors(els.ctx, results.poseLandmarks, POSE_CONNECTIONS, { color: '#0ea5e9', lineWidth: 4 });
+                drawLandmarks(els.ctx, results.poseLandmarks, { color: '#38bdf8', lineWidth: 2, radius: 4 });
+                checkFall(results.poseLandmarks);
+            }
+            els.ctx.restore();
+
+            // 3D 渲染
+            if (results.poseWorldLandmarks) {
+                results.poseWorldLandmarks.forEach((lm, index) => {
+                    if (skeletonPoints[index]) {
+                        skeletonPoints[index].position.set(-lm.x, -lm.y + 1, -lm.z);
+                        skeletonPoints[index].material.color.setHex(STATE.isAlarmActive ? 0xef4444 : 0x38bdf8);
+                    }
+                });
+                skeletonLines.forEach(line => {
+                    const start = skeletonPoints[line.userData.start].position;
+                    const end = skeletonPoints[line.userData.end].position;
+                    const pos = line.geometry.attributes.position.array;
+                    pos[0] = start.x; pos[1] = start.y; pos[2] = start.z;
+                    pos[3] = end.x; pos[4] = end.y; pos[5] = end.z;
+                    line.geometry.attributes.position.needsUpdate = true;
+                    line.material.color.setHex(STATE.isAlarmActive ? 0xef4444 : 0x0ea5e9);
+                });
+            }
+
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        // 3D 場景初始化
+        let scene, camera, renderer, controls, skeletonPoints = [], skeletonLines = [];
+
+        function initThreeJS() {
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x0f172a, 0.05);
+
+            const container = els.threeContainer;
+            camera = new THREE.PerspectiveCamera(75, container.offsetWidth / container.offsetHeight, 0.1, 1000);
+            camera.position.set(0, 1, 3);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(container.offsetWidth, container.offsetHeight);
+            container.appendChild(renderer.domElement);
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+            scene.add(ambientLight);
+
+            const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+            dirLight.position.set(5, 10, 7);
+            scene.add(dirLight);
+
+            const gridHelper = new THREE.GridHelper(10, 20, 0x38bdf8, 0x1e293b);
+            scene.add(gridHelper);
+
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+
+            const geometry = new THREE.SphereGeometry(0.05, 16, 16);
+            const material = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
+            for (let i = 0; i < 33; i++) {
+                const sphere = new THREE.Mesh(geometry, material.clone());
+                scene.add(sphere);
+                skeletonPoints.push(sphere);
+            }
+
+            const lineMaterial = new THREE.LineBasicMaterial({ color: 0x0ea5e9, linewidth: 2 });
+            const connections = [[11, 12], [11, 13], [13, 15], [12, 14], [14, 16], [11, 23], [12, 24], [23, 24], [23, 25], [24, 26], [25, 27], [26, 28], [27, 29], [28, 30], [29, 31], [30, 32]];
+            connections.forEach(pair => {
+                const lineGeometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, 0)]);
+                const line = new THREE.Line(lineGeometry, lineMaterial);
+                line.userData = { start: pair[0], end: pair[1] };
+                scene.add(line);
+                skeletonLines.push(line);
+            });
+
+            window.addEventListener('resize', () => {
+                const w = container.offsetWidth;
+                const h = container.offsetHeight;
+                renderer.setSize(w, h);
+                camera.aspect = w / h;
+                camera.updateProjectionMatrix();
+                els.canvas.width = els.canvas.offsetWidth;
+                els.canvas.height = els.canvas.offsetHeight;
+            });
+        }
+
+        // 相機啟動
+        async function startCamera() {
+            try {
+                const pose = new Pose({
+                    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
+                });
+
+                pose.setOptions({
+                    modelComplexity: 1,
+                    smoothLandmarks: true,
+                    minDetectionConfidence: 0.5,
+                    minTrackingConfidence: 0.5
+                });
+
+                pose.onResults(onResults);
+
+                const camera = new Camera(els.video, {
+                    onFrame: async () => {
+                        await pose.send({ image: els.video });
+                    },
+                    width: 1280,
+                    height: 720
+                });
+
+                await camera.start();
+                addLog('攝影機啟動成功', 'success');
+                addLog('錄影系統準備中...', 'info');
+
+                // 等待 canvas 準備好再啟動錄影
+                setTimeout(() => {
+                    initRecordingStream();
+                }, 1000);
+
+            } catch (e) {
+                console.error('Camera error:', e);
+                addLog('攝影機啟動失敗: ' + e.message, 'error');
+            }
+        }
+
+        // 初始化
+        loadSettings();
+        initThreeJS();
+        startCamera();
+    </script>
+</body>
+
+</html>
